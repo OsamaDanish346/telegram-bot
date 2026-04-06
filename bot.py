@@ -21,7 +21,8 @@ username TEXT,
 balance REAL DEFAULT 0,
 invites INTEGER DEFAULT 0,
 joined TEXT,
-task_done INTEGER DEFAULT 0
+task_done INTEGER DEFAULT 0,
+phone TEXT
 )
 """)
 
@@ -45,7 +46,7 @@ fix_db()
 # DEFAULT DATA
 cursor.execute("SELECT * FROM rewards")
 if not cursor.fetchone():
-    cursor.execute("INSERT INTO rewards VALUES (2,0.5,5)")
+    cursor.execute("INSERT INTO rewards VALUES (2,0.5,5)")  # 0.5 for daily, 5 for weekly
 
 cursor.execute("SELECT * FROM settings WHERE key='task_version'")
 if not cursor.fetchone():
@@ -116,7 +117,7 @@ async def start(update, context):
 
     cursor.execute("SELECT * FROM users WHERE id=?", (uid,))
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users (id,username,balance,invites,joined,task_done) VALUES (?,?,?,?,?,?)",
+        cursor.execute("INSERT INTO users (id, username, balance, invites, joined, task_done) VALUES (?,?,?,?,?,?)",
                        (uid, user.username, 0, 0, str(datetime.now()), 0))
         conn.commit()
 
@@ -134,12 +135,15 @@ async def status(update, context):
     cursor.execute("SELECT COUNT(*) FROM users")
     total = cursor.fetchone()[0]
 
-    msg = f"""👤 @{u[0]}
-🆔 {uid}
-💰 {u[1]} AFN
+    msg = f"""🤵🏻‍♂️استعمالوونکی = {u[0]}
+
+💳 ایډي کارن : {uid}
+💵 ستاسو پيسو اندازه = {u[1]} AFN
 
 👥 ټول یوزران: {total}
-📆 Monthly: 380"""
+📆 Monthly: 380
+🔗 د بیلانس زیاتولو لپاره [ 👫 کسان ] دعوت کړی،
+بوټ ته!"""
     await update.message.reply_text(msg)
 
 # INVITE
@@ -209,7 +213,7 @@ async def withdraw(update, context):
 # ADMIN
 async def admin(update, context):
     if update.effective_user.id != ADMIN_ID:
-        return
+        return await update.message.reply_text("🚫 تاسو اډمن نه یاست!")
     await update.message.reply_text("👑 Admin Panel", reply_markup=admin_menu())
 
 # MESSAGE HANDLER
@@ -217,56 +221,24 @@ async def msg(update, context):
     uid = update.effective_user.id
     t = update.message.text
 
+    # Ensure the task is completed before proceeding
     if not await check_tasks(update, context):
         return
 
-    if t == "🔙 بیرته":
-        return await update.message.reply_text("اصلي مینو", reply_markup=main_menu())
-
-    if context.user_data.get("wd"):
-        context.user_data["wd"] = False
-        cursor.execute("SELECT balance FROM users WHERE id=?", (uid,))
-        bal = cursor.fetchone()[0]
-
-        cursor.execute("INSERT INTO withdraw (user_id, phone, amount, status) VALUES (?,?,?,?)",
-                       (uid, t, bal, "pending"))
-        conn.commit()
-
-        await context.bot.send_message(ADMIN_ID, f"💳 Withdraw\n{uid}\n{t}\n{bal}")
-        return await update.message.reply_text("✔️ واستول شو")
-
-    if t == "📊 حالت": await status(update, context)
-    elif t == "👥 دعوت": await invite(update, context)
-    elif t == "🎁 بونس": await update.message.reply_text("انتخاب:", reply_markup=bonus_menu())
-    elif t == "🎁 ورځنۍ": await give_bonus(update, context, "daily")
-    elif t == "📅 اوونیز": await give_bonus(update, context, "weekly")
-
-    elif t == "💰 پیسې زیاتول":
-        await update.message.reply_text("انتخاب:", reply_markup=money_menu())
-
-    elif t == "🎯 ټاسکونه":
-        await update.message.reply_text("📢 چینلونه join کړه")
-
-    elif t == "💳 ایزی لوډ": await withdraw(update, context)
-
-    elif t == "ℹ️ د ربات په اړه":
-        await update.message.reply_text("""🔥 اوس له ټیلیګرام څخه پیسې وګټئ زموږ د بوټ په مرسته!
-
-💸 ملګري Invite کړئ  
-🎁 ورځنۍ او اوونیز بونس واخلئ  
-🎯 ټاسکونه ترسره کړئ او عاید ترلاسه کړئ  
-
-🇦🇫 دا ربات د افغانانو لپاره جوړ شوی""")
-
-    elif t == "/admin":
-        await admin(update, context)
-
-# RUN
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("admin", admin))
-app.add_handler(MessageHandler(filters.TEXT, msg))
-
-print("Bot Running...")
-app.run_polling()
+    # Admin Panel Interactions
+    if t == "📊 احصایه":  # Stats for admin
+        await status(update, context)
+    elif t == "👥 یوزران":  # User list for admin
+        await users(update, context)
+    elif t == "📢 برودکاست":  # Broadcast message for admin
+        await broadcast(update, context)
+    elif t == "💰 ریوارد کنټرول":  # Reward control for admin
+        await reward_control(update, context)
+    elif t == "➕ چینل اضافه":  # Add new channel for admin
+        await add_channel(update, context)
+    elif t == "⚙️ سیټینګ":  # Settings for admin
+        await settings(update, context)
+    elif t == "📣 آټو پوسټ":  # Auto-post settings for admin
+        await auto_post(update, context)
+    elif t == "🔙 بیرته":  # Go back to main menu
+        await update.message.reply_text("اصلي مینو", reply_markup=main_menu())
